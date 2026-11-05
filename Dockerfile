@@ -25,9 +25,11 @@ RUN uv pip install --system \
     tabulate \
     matplotlib \
     ipython \
+    pydantic \
     llama-index-core \
     llama-index-embeddings-huggingface \
     sentence-transformers \
+    qdrant-client \
     ollama \
     ipykernel \
     jupyterlab
