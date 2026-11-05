@@ -1,0 +1,18 @@
+[project]
+name = "maintidoc-san-ayognide"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "ipython>=9.18.1",
+    "llama-index-core>=0.14.25",
+    "llama-index-embeddings-huggingface>=0.8.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "pandas>=3.1.1",
+    "pillow>=13.0.0",
+    "pymupdf>=2.1",
+    "sentence-transformers>=6.2.0",
+    "tabulate>=0.10.0",
+]
