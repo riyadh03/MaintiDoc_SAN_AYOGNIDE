@@ -116,3 +116,4 @@ def validate_citations(output: Dict[str, Any], allowed_citations: Dict[str, Any]
             issues.append(f"Citation non prouvée / hallucinante : '{c}'")
 
     return issues
+

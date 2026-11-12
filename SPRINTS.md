@@ -8,9 +8,9 @@ Suivi d'avancement des 7 Sprints du projet intégrateur MaintiDoc.
 ## Sprint 1 : Industrialiser le stockage vectoriel
 > **Objectif** : Remplacer les index locaux éphémères (`npz` / stockage en mémoire) par une base de données vectorielle d'entreprise persistante et optimisée pour la recherche hybride.
 
-- [ ] Migration vers PGVector ou Qdrant (remplacement des index locaux)
-- [ ] Séparation explicite des index textuels et visuels
-- [ ] Gestion des métadonnées, de la provenance et de la persistance des données
+- [x] Migration vers PGVector ou Qdrant (remplacement des index locaux)
+- [x] Séparation explicite des index textuels et visuels
+- [x] Gestion des métadonnées, de la provenance et de la persistance des données
 
 ---
 

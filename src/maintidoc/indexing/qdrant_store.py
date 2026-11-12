@@ -7,6 +7,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, Fi
 
 from maintidoc.schemas import TextRecord, TableRecord, ImageRecord, SearchHit
 from maintidoc.indexing.embeddings import EmbeddingsManager
+from maintidoc.config import INDICES_DIR
 
 
 class QdrantStore:
@@ -17,17 +18,21 @@ class QdrantStore:
     TEXT_DIM = 1024  # BGE-M3
     VISUAL_DIM = 512  # CLIP ViT-B/32
 
-    def __init__(self, host: Optional[str] = None, port: int = 6333):
-        # Détection automatique de l'hôte (Docker vs Local)
+    def __init__(self, host: Optional[str] = None, port: int = 6333, path: Optional[str] = None):
+        # 1. Tentative de connexion au serveur Qdrant (Docker ou distant)
         target_host = host or os.getenv("QDRANT_HOST", "localhost")
+        self.mode = "remote"
         try:
-            self.client = QdrantClient(host=target_host, port=port, timeout=5.0)
+            self.client = QdrantClient(host=target_host, port=port, timeout=2.0)
             self.client.get_collections()
             self.is_connected = True
         except Exception:
-            # Fallback en mémoire locale si le conteneur n'est pas encore démarré
-            self.client = QdrantClient(":memory:")
+            # 2. Fallback persistant sur disque local (sans dépendance externe Docker)
+            db_path = path or str(INDICES_DIR / "qdrant_db")
+            os.makedirs(db_path, exist_ok=True)
+            self.client = QdrantClient(path=db_path)
             self.is_connected = False
+            self.mode = f"local_disk ({db_path})"
 
     def init_collections(self, force_recreate: bool = False):
         """Initialise les deux collections (texte et visuel) avec leurs dimensions respectives."""

@@ -76,7 +76,17 @@ Notre objectif est de transformer le prototype RAG local MaintiDoc (Manuel SAN, 
 ---
 
 ### [Sprint 1] Industrialiser le stockage vectoriel
-*(À compléter à la clôture du Sprint 1)*
+* **Date** : Novembre 2026
+* **Objectif** : Migration vers Qdrant, séparation stricte des index textuel (1024-d BGE-M3) et visuel (512-d CLIP), gestion de la persistance (Docker et fallback local sur disque) et traçabilité des métadonnées (page, element_id, SHA-256).
+* **Prompt Synthétique de Référence** :
+```markdown
+Agis en tant que Lead Tech & Architecte Vectoriel.
+Industrialise la couche de persistance vectorielle de MaintiDoc :
+1. Remplace les index éphémères locaux (.npz et RAM) par Qdrant dans docker-compose.yml et src/maintidoc/indexing/qdrant_store.py.
+2. Crée deux collections vectorielles isolées : 'maintidoc_text' (BGE-M3, Cosine, 1024-d) et 'maintidoc_visual' (CLIP ViT-B/32, Cosine, 512-d).
+3. Intègre un fallback persistant sur disque local (data/processed/indices/qdrant_db) assurant la continuité sans Docker.
+4. Stocke l'intégralité des métadonnées de provenance dans les payloads Qdrant (document_id, sha256, page, element_id, modality, figure_id).
+```
 
 ---
 
