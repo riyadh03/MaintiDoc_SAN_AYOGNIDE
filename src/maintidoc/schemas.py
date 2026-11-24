@@ -4,6 +4,17 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
+def make_citation_id(document_id: str, page: int, element_id: str) -> str:
+    """Identifiant de citation canonique : ``<document_id>:p<page>:<element_id>``.
+
+    Source unique de vérité du format : l'EvidencePacker l'utilise pour construire
+    les citations autorisées, le prompt LLM pour étiqueter les sources, et
+    ``validate_citations`` pour vérifier la réponse. Ne jamais reconstruire ce
+    format à la main ailleurs.
+    """
+    return f"{document_id}:p{page}:{element_id}"
+
+
 class BaseEvidence(BaseModel):
     """Preuve documentaire de base."""
     document_id: str = "SAN-MAN-001"

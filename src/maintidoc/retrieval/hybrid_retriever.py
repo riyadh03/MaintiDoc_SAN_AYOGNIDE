@@ -149,38 +149,54 @@ def fuse_hits_rrf(
 
     Formule mathématique :
         RRF(d) = Σ  1 / (k + rank_i(d))    pour chaque liste i contenant d
+
+    Points d'attention :
+      - Seuls les RANGS sont utilisés, jamais les scores bruts : un score BM25 (non borné,
+        ex. 8.4) et un cosinus (dans [-1, 1]) ne sont pas comparables entre eux.
+      - Si une même liste contient un élément plusieurs fois (ex. points Qdrant
+        dupliqués), seul son meilleur rang compte : un doublon ne doit pas gonfler le score.
+      - La provenance est conservée : ``retrieval_sources`` et ``source_ranks``
+        (ex. {"dense": 3, "bm25": 1}) pour l'explicabilité et l'analyse d'erreurs.
     """
-    scores: Dict[str, float] = {}
-    best_hit_per_id: Dict[str, SearchHit] = {}
+    # eid → {source → meilleur rang dans cette source}
+    ranks: Dict[str, Dict[str, int]] = {}
+    # eid → premier hit rencontré (représentant ; contenu identique quelle que soit la source)
+    representative: Dict[str, SearchHit] = {}
 
     for source_name, hits in hit_lists:
         for hit in hits:
             eid = hit.element_id
-            rrf_contribution = 1.0 / (k + hit.rank)
-            scores[eid] = scores.get(eid, 0.0) + rrf_contribution
+            per_source = ranks.setdefault(eid, {})
+            if source_name not in per_source or hit.rank < per_source[source_name]:
+                per_source[source_name] = hit.rank
+            representative.setdefault(eid, hit)
 
-            # Conserver le hit avec le meilleur score individuel comme représentant
-            if eid not in best_hit_per_id or hit.score > best_hit_per_id[eid].score:
-                best_hit_per_id[eid] = hit
-
-    sorted_eids = sorted(scores.keys(), key=lambda eid: -scores[eid])[:top_n]
+    scores = {
+        eid: sum(1.0 / (k + r) for r in per_source.values())
+        for eid, per_source in ranks.items()
+    }
+    # Tri stable par score décroissant : à égalité, l'ordre de première apparition est conservé
+    sorted_eids = sorted(scores, key=lambda eid: -scores[eid])[:top_n]
 
     result: List[SearchHit] = []
     for new_rank, eid in enumerate(sorted_eids, 1):
-        base_hit = best_hit_per_id[eid]
-        fused_hit = SearchHit(
-            element_id=base_hit.element_id,
-            page=base_hit.page,
-            modality=base_hit.modality,
-            score=round(scores[eid], 6),  # score RRF consolidé
-            rank=new_rank,
-            metadata={
-                **base_hit.metadata,
-                "rrf_score": round(scores[eid], 6),
-                "original_score": base_hit.score,
-            },
+        base_hit = representative[eid]
+        metadata = {k_: v for k_, v in base_hit.metadata.items() if k_ != "source"}
+        result.append(
+            SearchHit(
+                element_id=base_hit.element_id,
+                page=base_hit.page,
+                modality=base_hit.modality,
+                score=round(scores[eid], 6),  # score RRF consolidé
+                rank=new_rank,
+                metadata={
+                    **metadata,
+                    "rrf_score": round(scores[eid], 6),
+                    "retrieval_sources": sorted(ranks[eid]),
+                    "source_ranks": dict(ranks[eid]),
+                },
+            )
         )
-        result.append(fused_hit)
 
     return result
 

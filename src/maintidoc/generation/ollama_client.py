@@ -30,15 +30,19 @@ Réponds en français, sous forme d'objet JSON conforme au schéma demandé."""
 
 
 def format_evidence(texts: List[Dict[str, Any]], images: List[Dict[str, Any]]) -> str:
-    """Formate les extraits de preuves textuelles et les références visuelles pour le VLM."""
+    """Formate les preuves produites par ``EvidencePacker.pack`` pour le VLM.
+
+    Chaque bloc est étiqueté par son ``citation_id`` canonique : c'est exactement
+    la chaîne que le LLM doit recopier dans ``citations`` et que
+    ``validate_citations`` comparera à ``allowed_citations``.
+    """
     chunks = []
     for h in texts:
-        ref = f"{h['document_id']}:p{h['page']}:{h['element_id']}"
-        chunks.append(f"[SOURCE {ref} | texte ou tableau | page {h['page']}]\n{h['excerpt']}")
+        label = "tableau" if h["modality"] == "table" else "texte"
+        chunks.append(f"[SOURCE {h['citation_id']} | {label} | page {h['page']}]\n{h['content']}")
     for h in images:
-        ref = f"{h['document_id']}:p{h['page']}:{h['element_id']}"
-        fig = h.get("figure_id", "FIG")
-        chunks.append(f"[SOURCE {ref} | image originale | {fig} | page {h['page']}] (image jointe)")
+        fig = h.get("figure_id") or "FIG"
+        chunks.append(f"[SOURCE {h['citation_id']} | image originale | {fig} | page {h['page']}] (image jointe)")
     return "\n\n".join(chunks)
 
 
@@ -105,15 +109,32 @@ def ask_maintidoc_vlm(
 
 
 def validate_citations(output: Dict[str, Any], allowed_citations: Dict[str, Any]) -> List[str]:
-    """Validation déterministe : vérifie que chaque citation existe réellement dans les sources."""
-    issues = []
+    """Validation déterministe des citations d'une réponse LLM.
+
+    Règles :
+      1. Chaque citation doit être un ``citation_id`` présent dans ``allowed_citations``
+         (comparaison exacte, après retrait des crochets / espaces parasites).
+      2. Une réponse ``answered`` doit citer au moins une source : une affirmation
+         technique sans preuve est rejetée (principe « zéro hallucination »).
+
+    Returns:
+        Liste des problèmes détectés (vide = réponse valide).
+    """
     if not isinstance(output, dict):
         return ["Réponse non conforme (pas un dictionnaire JSON)."]
 
     citations = output.get("citations", [])
+    if not isinstance(citations, list):
+        return ["Le champ 'citations' doit être une liste."]
+
+    issues = []
     for c in citations:
-        if c not in allowed_citations:
-            issues.append(f"Citation non prouvée / hallucinante : '{c}'")
+        normalized = str(c).strip().strip("[]").removeprefix("SOURCE").strip()
+        if normalized not in allowed_citations:
+            issues.append(f"Citation non prouvée / hallucinée : '{c}'")
+
+    if output.get("status") == "answered" and not citations:
+        issues.append("Réponse 'answered' sans aucune citation : preuve manquante.")
 
     return issues
 

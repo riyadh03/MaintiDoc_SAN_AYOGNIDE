@@ -25,6 +25,11 @@ INDICES_DIR = PROCESSED_DATA_DIR / "indices"
 # Modèles et Paramètres IA
 TEXT_EMBEDDING_MODEL = "BAAI/bge-m3"
 VISUAL_EMBEDDING_MODEL = "sentence-transformers/clip-ViT-B-32"
+# Cross-encoder multilingue (même famille que BGE-M3, supporte le français)
+RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+# Score sigmoïde minimal [0, 1] pour qu'un passage soit considéré comme preuve.
+# Valeur prudente provisoire : à calibrer sur le jeu d'évaluation au Sprint 6.
+RERANKER_MIN_SCORE = 0.05
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = "qwen3.8:27b"
 OLLAMA_FALLBACK_MODEL = "qwen2.5:14b"
