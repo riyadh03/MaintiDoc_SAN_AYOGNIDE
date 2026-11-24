@@ -9,6 +9,25 @@ from maintidoc.schemas import TextRecord, TableRecord, ImageRecord, SearchHit
 from maintidoc.indexing.embeddings import EmbeddingsManager
 from maintidoc.config import INDICES_DIR
 
+# Espace de noms fixe des identifiants de points MaintiDoc. NE JAMAIS LE MODIFIER :
+# tous les identifiants existants changeraient et la réindexation dupliquerait les points.
+_POINT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "maintidoc/qdrant-points")
+
+
+def make_point_id(document_id: str, document_sha256: str, element_id: str) -> str:
+    """Identifiant de point Qdrant déterministe (UUID v5).
+
+    Pourquoi pas uuid4 : un uuid4 est aléatoire, donc réindexer le même document crée
+    de NOUVEAUX points à côté des anciens (doublons dans les résultats de recherche).
+    uuid5 = hachage SHA-1 de (namespace, nom) : mêmes entrées → même identifiant, donc
+    l'upsert ÉCRASE le point existant (indexation idempotente).
+
+    Le sha256 du document fait partie du nom : deux versions d'un même PDF produisent
+    des identifiants distincts et restent traçables (la purge de l'ancienne version
+    est une opération explicite).
+    """
+    return str(uuid.uuid5(_POINT_NAMESPACE, f"{document_id}:{document_sha256}:{element_id}"))
+
 
 class QdrantStore:
     """Gestionnaire de collections vectorielles Qdrant."""
@@ -63,7 +82,7 @@ class QdrantStore:
             vector = emb_mgr.encode_text(t.text)
             points.append(
                 PointStruct(
-                    id=str(uuid.uuid4()),
+                    id=make_point_id(t.document_id, t.document_sha256, t.element_id),
                     vector=vector,
                     payload={
                         "document_id": t.document_id,
@@ -81,7 +100,7 @@ class QdrantStore:
             vector = emb_mgr.encode_text(tab.text)
             points.append(
                 PointStruct(
-                    id=str(uuid.uuid4()),
+                    id=make_point_id(tab.document_id, tab.document_sha256, tab.element_id),
                     vector=vector,
                     payload={
                         "document_id": tab.document_id,
@@ -105,7 +124,7 @@ class QdrantStore:
             vector = emb_mgr.encode_image(im.image_path)
             points.append(
                 PointStruct(
-                    id=str(uuid.uuid4()),
+                    id=make_point_id(im.document_id, im.document_sha256, im.element_id),
                     vector=vector,
                     payload={
                         "document_id": im.document_id,
