@@ -65,6 +65,17 @@ def test_reindexing_same_document_does_not_duplicate(store):
     assert store.client.count(QdrantStore.TEXT_COLLECTION).count == 2
 
 
+def test_search_text_returns_hits_with_payload(store):
+    """Régression : ``client.search`` n'existe plus dans qdrant-client 1.20."""
+    store.index_texts_and_tables(*_records(SHA_V1), FakeEmbeddings())
+
+    hits = store.search_text("voyant orange", FakeEmbeddings(), top_k=2)
+
+    assert [h.rank for h in hits] == [1, 2]
+    assert {h.element_id for h in hits} == {"p01_text_01", "p02_table_01"}
+    assert all(h.metadata["content"] for h in hits)
+
+
 def test_new_document_version_is_kept_separately(store):
     store.index_texts_and_tables(*_records(SHA_V1), FakeEmbeddings())
     store.index_texts_and_tables(*_records(SHA_V2), FakeEmbeddings())

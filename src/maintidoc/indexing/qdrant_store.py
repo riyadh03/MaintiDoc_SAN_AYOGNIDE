@@ -149,14 +149,24 @@ class QdrantStore:
         if points:
             self.client.upsert(collection_name=self.VISUAL_COLLECTION, points=points)
 
+    def _query(self, collection: str, vector: List[float], top_k: int):
+        """Recherche des plus proches voisins (API ``query_points``, qdrant-client >= 1.10).
+
+        ``client.search`` était déprécié depuis 1.10 et a été supprimé dans les versions
+        récentes (AttributeError avec 1.20). ``query_points`` renvoie un objet dont
+        ``.points`` contient les ScoredPoint (payload inclus par défaut).
+        """
+        return self.client.query_points(
+            collection_name=collection,
+            query=vector,
+            limit=top_k,
+            with_payload=True,
+        ).points
+
     def search_text(self, query: str, emb_mgr: EmbeddingsManager, top_k: int = 6) -> List[SearchHit]:
         """Recherche sémantique dense dans les textes et tableaux."""
         query_vector = emb_mgr.encode_text(query)
-        hits = self.client.search(
-            collection_name=self.TEXT_COLLECTION,
-            query_vector=query_vector,
-            limit=top_k,
-        )
+        hits = self._query(self.TEXT_COLLECTION, query_vector, top_k)
         return [
             SearchHit(
                 element_id=h.payload.get("element_id", ""),
@@ -177,11 +187,7 @@ class QdrantStore:
     def search_visual(self, visual_query_en: str, emb_mgr: EmbeddingsManager, top_k: int = 5) -> List[SearchHit]:
         """Recherche multimodale dans les schémas via CLIP."""
         query_vector = emb_mgr.encode_visual_query(visual_query_en)
-        hits = self.client.search(
-            collection_name=self.VISUAL_COLLECTION,
-            query_vector=query_vector,
-            limit=top_k,
-        )
+        hits = self._query(self.VISUAL_COLLECTION, query_vector, top_k)
         return [
             SearchHit(
                 element_id=h.payload.get("element_id", ""),
