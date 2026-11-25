@@ -21,18 +21,30 @@ class BaseEvidence(BaseModel):
     document_sha256: str
     page: int
     element_id: str
-    modality: str  # "text", "table", "schema", "illustration"
+    modality: str  # "text", "table", "schema_text", "schema", "illustration"
 
 
 class TextRecord(BaseEvidence):
-    """Segment textuel extrait d'une page."""
+    """Segment textuel extrait d'une page.
+
+    ``source`` trace l'origine du texte (provenance, explicabilité) :
+      - ``pdf_text_layer`` : couche texte native du PDF (fiable) ;
+      - ``ocr_page``       : page scannée reconnue par OCR (modality ``text``) ;
+      - ``ocr_figure``     : étiquettes lues dans un schéma (modality ``schema_text``),
+                             rattachées à l'image par ``linked_element_id``.
+    """
     text: str
+    source: str = "pdf_text_layer"
+    ocr_confidence: Optional[float] = None  # confiance moyenne des lignes OCR retenues
+    figure_id: Optional[str] = None
+    linked_element_id: Optional[str] = None  # element_id de l'ImageRecord source
 
 
 class TableRecord(BaseEvidence):
     """Tableau extrait d'une page avec métadonnées structurelles."""
     bbox: List[float]
-    rows: List[List[str]]
+    header: List[str] = Field(default_factory=list)
+    rows: List[List[str]]  # corps du tableau (sans l'en-tête)
     text: str  # Format Markdown
 
 
@@ -43,6 +55,7 @@ class ImageRecord(BaseEvidence):
     image_sha256: str
     rectangles: List[List[float]] = Field(default_factory=list)
     xref: int
+    ocr_text: Optional[str] = None  # étiquettes lues par OCR (None si OCR désactivé/vide)
 
 
 class SearchHit(BaseModel):

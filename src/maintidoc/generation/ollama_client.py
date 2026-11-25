@@ -29,6 +29,15 @@ Tu n'autorises ni ne pilotes une opération technique, et ne crées aucun ticket
 Réponds en français, sous forme d'objet JSON conforme au schéma demandé."""
 
 
+# Le LLM doit savoir qu'un passage vient de l'OCR : erreurs de lecture possibles,
+# ce qui active la consigne « si une étiquette est illisible, indique l'incertitude ».
+_MODALITY_LABELS = {
+    "table": "tableau",
+    "schema_text": "étiquettes du schéma (OCR)",
+    "image_text": "texte d'image (OCR)",
+}
+
+
 def format_evidence(texts: List[Dict[str, Any]], images: List[Dict[str, Any]]) -> str:
     """Formate les preuves produites par ``EvidencePacker.pack`` pour le VLM.
 
@@ -38,7 +47,7 @@ def format_evidence(texts: List[Dict[str, Any]], images: List[Dict[str, Any]]) -
     """
     chunks = []
     for h in texts:
-        label = "tableau" if h["modality"] == "table" else "texte"
+        label = _MODALITY_LABELS.get(h["modality"], "texte")
         chunks.append(f"[SOURCE {h['citation_id']} | {label} | page {h['page']}]\n{h['content']}")
     for h in images:
         fig = h.get("figure_id") or "FIG"

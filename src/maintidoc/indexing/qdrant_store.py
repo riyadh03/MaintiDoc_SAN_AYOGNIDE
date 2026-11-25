@@ -91,6 +91,10 @@ class QdrantStore:
                         "element_id": t.element_id,
                         "modality": t.modality,
                         "content": t.text,
+                        "source": t.source,
+                        "ocr_confidence": t.ocr_confidence,
+                        "figure_id": t.figure_id,
+                        "linked_element_id": t.linked_element_id,
                     },
                 )
             )
@@ -109,6 +113,7 @@ class QdrantStore:
                         "element_id": tab.element_id,
                         "modality": tab.modality,
                         "content": tab.text,
+                        "header": tab.header,
                         "bbox": tab.bbox,
                     },
                 )
@@ -136,6 +141,7 @@ class QdrantStore:
                         "image_path": im.image_path,
                         "image_sha256": im.image_sha256,
                         "rectangles": im.rectangles,
+                        "ocr_text": im.ocr_text,
                     },
                 )
             )
@@ -161,6 +167,8 @@ class QdrantStore:
                 metadata={
                     "document_id": h.payload.get("document_id"),
                     "content": h.payload.get("content", ""),
+                    "source": h.payload.get("source"),
+                    "figure_id": h.payload.get("figure_id"),
                 },
             )
             for i, h in enumerate(hits, 1)

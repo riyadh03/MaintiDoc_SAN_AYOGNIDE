@@ -34,6 +34,20 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = "qwen3.8:27b"
 OLLAMA_FALLBACK_MODEL = "qwen2.5:14b"
 
+# OCR (schémas techniques et pages scannées) — moteur RapidOCR/ONNX
+OCR_ENABLED = os.getenv("MAINTIDOC_OCR", "1") != "0"
+# Agrandissement avant reconnaissance : x2 restaure les espaces perdus sur le petit texte
+OCR_UPSCALE = 2
+# Lignes OCR sous ce seuil de confiance ignorées (bruit, flèches lues comme du texte)
+OCR_MIN_CONFIDENCE = 0.5
+# Texte OCR retenu seulement s'il contient au moins N caractères alphanumériques
+OCR_MIN_ALNUM_CHARS = 4
+# Page « scannée » : couche texte quasi vide ET une image couvrant l'essentiel de la page.
+# Les deux conditions évitent de lancer l'OCR sur une page simplement blanche (ex. p.8).
+OCR_PAGE_MAX_TEXT_CHARS = 100
+OCR_PAGE_MIN_IMAGE_COVERAGE = 0.5
+OCR_PAGE_DPI = 200
+
 # Métadonnées SAN
 DOC_ID = "SAN-MAN-001"
 TOTAL_EXPECTED_PAGES = 9
