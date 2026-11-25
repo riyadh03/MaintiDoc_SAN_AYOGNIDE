@@ -48,6 +48,16 @@ OCR_PAGE_MAX_TEXT_CHARS = 100
 OCR_PAGE_MIN_IMAGE_COVERAGE = 0.5
 OCR_PAGE_DPI = 200
 
+# Orchestration agentique (LangGraph) — bornes des boucles de contrôle.
+# Toute boucle est bornée : un agent ne doit jamais pouvoir tourner indéfiniment.
+AGENT_MAX_CLARIFICATIONS = 2      # questions de clarification posées au plus par conversation
+AGENT_MAX_RETRIEVAL_ATTEMPTS = 2  # 1 recherche + 1 reformulation si aucune preuve
+AGENT_MAX_GENERATION_ATTEMPTS = 2  # 1 génération + 1 correction si citations invalides
+AGENT_RERANK_TOP_K = 4
+# Checkpoints SQLite : une conversation en attente de clarification (et, au Sprint 4,
+# d'approbation humaine) survit au redémarrage du notebook ou du serveur.
+AGENT_CHECKPOINT_DB = PROCESSED_DATA_DIR / "checkpoints.sqlite"
+
 # Métadonnées SAN
 DOC_ID = "SAN-MAN-001"
 TOTAL_EXPECTED_PAGES = 9
