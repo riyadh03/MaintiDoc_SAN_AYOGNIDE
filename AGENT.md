@@ -91,7 +91,18 @@ Industrialise la couche de persistance vectorielle de MaintiDoc :
 ---
 
 ### [Sprint 2] Améliorer la recherche (Retrieval & Reranking)
-*(À compléter à la clôture du Sprint 2)*
+* **Date** : Novembre 2026
+* **Objectif** : Maximiser rappel puis précision : recherche hybride Dense (BGE-M3) + BM25 fusionnée par RRF au niveau du chunk, reranking cross-encoder multilingue (bge-reranker-v2-m3), extraction fidèle des tableaux et OCR des schémas/pages scannées, sélection des preuves et contrat de citation strict.
+* **Prompt Synthétique de Référence** :
+```markdown
+Agis en tant que Lead Tech RAG multimodal.
+Améliore la chaîne de recherche de MaintiDoc :
+1. Recherche hybride : BM25 (codes exacts AL-01, DIAG-FC-01) + dense Qdrant/BGE-M3, fusion RRF par element_id (rangs uniquement, provenance source_ranks conservée), recherche visuelle CLIP séparée.
+2. Reranking : cross-encoder multilingue BAAI/bge-reranker-v2-m3, score sigmoïde, seuil minimal configurable (à calibrer au Sprint 6).
+3. Tableaux & OCR : reconstruire chaque cellule depuis les mots de la couche texte (géométrie find_tables), en-têtes réels, réparation des apostrophes ; OCR RapidOCR (ONNX) des schémas FIG-01 à FIG-05 avec agrandissement x2 et post-correction des codes, indexé comme texte (modality schema_text) lié à l'image ; OCR de repli des pages scannées (couche texte vide ET image pleine page).
+4. Preuves : EvidencePacker + identifiant de citation canonique <document_id>:p<page>:<element_id>, validation stricte des citations du LLM.
+5. Idempotence : identifiants de points Qdrant uuid5 déterministes.
+```
 
 ---
 

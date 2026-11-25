@@ -17,10 +17,10 @@ Suivi d'avancement des 7 Sprints du projet intégrateur MaintiDoc.
 ## Sprint 2 : Améliorer la recherche (Retrieval & Reranking)
 > **Objectif** : Maximiser le rappel et la précision du système d'extraction en couplant recherche dense/sparse, alignement multimodal et reclassement par cross-encoder.
 
-- [ ] Implémentation de la recherche hybride (texte + image)
-- [ ] Intégration d'un reranker multilingue
-- [ ] Traitement avancé des tableaux et de l'OCR
-- [ ] Mécanisme de sélection des preuves et validation stricte des citations
+- [x] Implémentation de la recherche hybride (texte + image)
+- [x] Intégration d'un reranker multilingue
+- [x] Traitement avancé des tableaux et de l'OCR
+- [x] Mécanisme de sélection des preuves et validation stricte des citations
 
 ---
 
