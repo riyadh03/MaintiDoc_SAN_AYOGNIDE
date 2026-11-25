@@ -8,19 +8,19 @@ Suivi d'avancement des 7 Sprints du projet intégrateur MaintiDoc.
 ## Sprint 1 : Industrialiser le stockage vectoriel
 > **Objectif** : Remplacer les index locaux éphémères (`npz` / stockage en mémoire) par une base de données vectorielle d'entreprise persistante et optimisée pour la recherche hybride.
 
-- [ ] Migration vers PGVector ou Qdrant (remplacement des index locaux)
-- [ ] Séparation explicite des index textuels et visuels
-- [ ] Gestion des métadonnées, de la provenance et de la persistance des données
+- [x] Migration vers PGVector ou Qdrant (remplacement des index locaux)
+- [x] Séparation explicite des index textuels et visuels
+- [x] Gestion des métadonnées, de la provenance et de la persistance des données
 
 ---
 
 ## Sprint 2 : Améliorer la recherche (Retrieval & Reranking)
 > **Objectif** : Maximiser le rappel et la précision du système d'extraction en couplant recherche dense/sparse, alignement multimodal et reclassement par cross-encoder.
 
-- [ ] Implémentation de la recherche hybride (texte + image)
-- [ ] Intégration d'un reranker multilingue
-- [ ] Traitement avancé des tableaux et de l'OCR
-- [ ] Mécanisme de sélection des preuves et validation stricte des citations
+- [x] Implémentation de la recherche hybride (texte + image)
+- [x] Intégration d'un reranker multilingue
+- [x] Traitement avancé des tableaux et de l'OCR
+- [x] Mécanisme de sélection des preuves et validation stricte des citations
 
 ---
 
