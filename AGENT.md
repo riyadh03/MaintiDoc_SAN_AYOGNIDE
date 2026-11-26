@@ -107,7 +107,21 @@ Améliore la chaîne de recherche de MaintiDoc :
 ---
 
 ### [Sprint 3] Ajouter l'orchestration agentique
-*(À compléter à la clôture du Sprint 3)*
+* **Date** : Novembre 2026
+* **Objectif** : Graphe d'état LangGraph explicite qui route chaque question, pose des questions de clarification, borne toutes ses boucles de contrôle et prépare les points d'action outillés (MCP/HITL au Sprint 4).
+* **Choix de modèle** : `qwen2.5vl:3b` (~3 Go) remplace `qwen3.8:27b` (~17 Go, dimensionné pour le prototype Mac M3 36 Go). Poste cible : 16 Go de RAM sans GPU dédié ; le modèle doit rester vision-langage (schémas joints). Configurable via `MAINTIDOC_OLLAMA_MODEL` (ex. `qwen2.5vl:7b` pour la démo). Compromis assumé : un petit modèle se trompe plus souvent, d'où des garde-fous déterministes plutôt qu'une confiance dans le LLM.
+* **Validation live (Qwen 3B, CPU)** : routage 6/7 au premier essai, puis correction des écarts observés (hors-sujet classé « ambigu », boucle de clarification, statut incohérent avec des citations valides).
+* **Prompt Synthétique de Référence** :
+```markdown
+Agis en tant que Lead Tech systèmes agentiques.
+Orchestre MaintiDoc avec LangGraph :
+1. Graphe EXPLICITE (pas d'agent ReAct) : le LLM classe et rédige, le code décide des transitions.
+   Routeur Qwen à sortie structurée (RouteDecision) : documentation, ambiguous, operational_data, action_request, out_of_scope ; repli sûr sur "documentation" si le routeur échoue.
+2. Boucles bornées (config.AGENT_MAX_*) : ≤2 clarifications, ≤1 reformulation de requête si aucune preuve après reranking (fenêtre élargie), ≤1 régénération avec le retour du validateur de citations, puis rejet.
+3. Clarification par interrupt()/Command(resume=…), état persistant via checkpointer SQLite (survit au redémarrage) — même mécanisme que la future validation humaine du Sprint 4.
+4. Garde-fous déterministes face à un petit modèle : un code du manuel (AL-xx, DIAG-…, INC-…) rend la demande exploitable ; une réponse dont les citations sont validées est "answered", la prudence du modèle devient une incertitude.
+5. Tests sans Ollama : faux routeur/générateur déterministes, vrais EvidencePacker et validateur de citations, chaque chemin et chaque plafond couverts.
+```
 
 ---
 
