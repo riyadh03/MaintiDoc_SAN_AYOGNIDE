@@ -36,9 +36,9 @@ Suivi d'avancement des 7 Sprints du projet intégrateur MaintiDoc.
 ## Sprint 4 : Connecter MCP & Human-in-the-Loop
 > **Objectif** : Normaliser l'accès aux données opérationnelles via le protocole MCP et imposer un point d'arrêt humain obligatoire pour toute action engageante (création de tickets).
 
-- [ ] Intégration du protocole MCP (outils : `get_equipment_history`, `get_open_tickets`, `create_ticket`)
-- [ ] Implémentation du workflow de validation humaine obligatoire avant création de ticket
-- [ ] Assurer l'idempotence et la traçabilité des actions
+- [x] Intégration du protocole MCP (outils : `get_equipment_history`, `get_open_tickets`, `create_ticket`)
+- [x] Implémentation du workflow de validation humaine obligatoire avant création de ticket
+- [x] Assurer l'idempotence et la traçabilité des actions
 
 ---
 

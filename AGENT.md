@@ -126,7 +126,26 @@ Orchestre MaintiDoc avec LangGraph :
 ---
 
 ### [Sprint 4] Connecter MCP & Human-in-the-Loop
-*(À compléter à la clôture du Sprint 4)*
+* **Date** : Novembre 2026
+* **Objectif** : Remplacer les réponses fixes du Sprint 3 (« outil indisponible », « action refusée ») par un accès normalisé à la GMAO via MCP, avec un point d'arrêt humain obligatoire avant toute création de ticket.
+* **Choix** : GMAO simulée en SQLite, amorcée avec l'historique du manuel (INC-104 à INC-130) ; serveur MCP officiel (SDK `mcp` 2.x, `MCPServer`) en transport stdio, lancé par l'agent. Paramètres d'outils extraits de façon déterministe (regex) plutôt que par le LLM : sur CPU un appel Qwen coûte 10–20 s, et un modèle 3B peut confondre les équipements.
+* **Prompt Synthétique de Référence** :
+```markdown
+Agis en tant que Lead Tech systèmes agentiques et intégration SI.
+Connecte MaintiDoc à la GMAO via MCP avec validation humaine :
+1. Serveur MCP (3 outils typés, schémas pydantic) : get_equipment_history, get_open_tickets (lecture seule),
+   create_ticket (engageante). Les règles métier vivent CÔTÉ SERVEUR : équipement connu, priorité P1–P4,
+   approbateur nommé obligatoire, clé d'idempotence obligatoire ; erreurs renvoyées en is_error lisible.
+2. Graphe : operational_data → outil de lecture, réponse citée par identifiant GMAO ; action_request →
+   ticket : brouillon (historique consulté, doublons signalés) → interrupt() → approbation nominative
+   (corrections possibles) → create_ticket ; failover / zoning / commande destructive : refus (manuel §5).
+   Aucun chemin vers create_ticket sans passer par le nœud d'approbation.
+3. Idempotence : clé = hash(conversation + brouillon approuvé) ; même clé + même contenu → ticket existant
+   renvoyé, même clé + contenu différent → conflit refusé.
+4. Traçabilité : journal d'audit de chaque appel (lecture, refus, création, rejeu) avec conversation et acteur ;
+   décisions humaines dans la trace et le checkpoint SQLite (une approbation en attente survit au redémarrage).
+5. Tests sans Ollama sur la vraie chaîne MCP (transport en mémoire), plus un test de bout en bout en stdio.
+```
 
 ---
 
