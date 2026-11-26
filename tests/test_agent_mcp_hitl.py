@@ -146,6 +146,20 @@ def test_end_to_end_over_stdio_subprocess(tmp_path):
     assert any(t["id"] == "INC-131" for t in GMAOStore(tmp_path / "gmao.sqlite").get_open_tickets("FABRIC-A"))
 
 
+def test_stdio_works_when_stderr_has_no_fileno(tmp_path, monkeypatch):
+    """Bug vu dans le notebook : le sys.stderr de Jupyter n'a pas de fileno() → « fileno »."""
+    import io
+    import sys
+
+    class JupyterLikeStream(io.TextIOBase):
+        def write(self, s):
+            return len(s)
+
+    monkeypatch.setattr(sys, "stderr", JupyterLikeStream())
+    gmao = MCPGMAOClient.stdio(tmp_path / "gmao.sqlite")
+    assert [t["id"] for t in gmao.get_open_tickets(equipment_id="CTRL-B")["tickets"]] == ["INC-130"]
+
+
 def test_pending_approval_survives_restart(store, tmp_path):
     db = tmp_path / "checkpoints.sqlite"
     pending = make_agent(store, "action_request", checkpointer=sqlite_checkpointer(db)).ask(
