@@ -1,7 +1,7 @@
 """Client Ollama et validation déterministe des citations pour MaintiDoc."""
 from pathlib import Path
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 import os
 
 from maintidoc.config import OLLAMA_HOST, OLLAMA_MODEL
@@ -47,7 +47,7 @@ def format_evidence(texts: List[Dict[str, Any]], images: List[Dict[str, Any]]) -
     """
     chunks = []
     for h in texts:
-        label = _MODALITY_LABELS.get(h["modality"], "texte")
+        label = _MODALITY_LABELS.get(h.get("modality"), "texte")
         chunks.append(f"[SOURCE {h['citation_id']} | {label} | page {h['page']}]\n{h['content']}")
     for h in images:
         fig = h.get("figure_id") or "FIG"
@@ -79,18 +79,30 @@ def ask_maintidoc_vlm(
     images: List[Dict[str, Any]],
     model_name: str = OLLAMA_MODEL,
     host: str = OLLAMA_HOST,
+    feedback: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Interroge Ollama avec le prompt de maintenance et vérifie le schéma JSON strict."""
+    """Interroge Ollama avec le prompt de maintenance et vérifie le schéma JSON strict.
+
+    ``feedback`` : retour du validateur après une tentative rejetée (citations invalides),
+    ajouté au message pour que le modèle corrige sa réponse.
+    """
     from ollama import Client
     client = Client(host=host, timeout=300)
 
     content = format_evidence(texts, images)
+    correction = (
+        f"\n\nTA RÉPONSE PRÉCÉDENTE A ÉTÉ REJETÉE :\n{feedback}\n"
+        "Corrige-la : cite uniquement des identifiants SOURCE listés ci-dessus, "
+        "ou réponds 'insufficient_evidence'."
+        if feedback else ""
+    )
     user_message = {
         "role": "user",
         "content": (
             f"QUESTION : {question}\n\nPREUVES :\n{content}\n\n"
             "Retourne UNIQUEMENT un objet JSON conforme au schéma. "
             "Cite exclusivement des identifiants SOURCE fournis."
+            f"{correction}"
         ),
         "images": [Path(h["image_path"]).read_bytes() for h in images if Path(h["image_path"]).is_file()],
     }

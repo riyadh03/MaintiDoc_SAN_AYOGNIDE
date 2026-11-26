@@ -27,18 +27,18 @@ Suivi d'avancement des 7 Sprints du projet intégrateur MaintiDoc.
 ## Sprint 3 : Ajouter l'orchestration agentique
 > **Objectif** : Structurer l'intelligence du système via un graphe d'état avec LangChain & LangGraph pour router, poser des questions de clarification et décider des actions outillées.
 
-- [ ] Mise en place du graphe d'état avec LangChain & LangGraph
-- [ ] Définition des boucles de contrôle et gestion des états/transitions
-- [ ] Gestion des demandes de clarification utilisateur et stratégies d'outils
+- [x] Mise en place du graphe d'état avec LangChain & LangGraph
+- [x] Définition des boucles de contrôle et gestion des états/transitions
+- [x] Gestion des demandes de clarification utilisateur et stratégies d'outils
 
 ---
 
 ## Sprint 4 : Connecter MCP & Human-in-the-Loop
 > **Objectif** : Normaliser l'accès aux données opérationnelles via le protocole MCP et imposer un point d'arrêt humain obligatoire pour toute action engageante (création de tickets).
 
-- [ ] Intégration du protocole MCP (outils : `get_equipment_history`, `get_open_tickets`, `create_ticket`)
-- [ ] Implémentation du workflow de validation humaine obligatoire avant création de ticket
-- [ ] Assurer l'idempotence et la traçabilité des actions
+- [x] Intégration du protocole MCP (outils : `get_equipment_history`, `get_open_tickets`, `create_ticket`)
+- [x] Implémentation du workflow de validation humaine obligatoire avant création de ticket
+- [x] Assurer l'idempotence et la traçabilité des actions
 
 ---
 
