@@ -6,14 +6,24 @@ Topologie (graphe EXPLICITE : le LLM classe et rédige, le code Python décide d
                       │                        ▲                └─ aucune ──► rewrite_query (≤1) ┐
                       │                        └───────────────────────────────────────────────┘
                       ├─ ambiguous ───────► clarify (interrupt) ──► classify
-                      ├─ operational_data ► respond_tool_unavailable ─► END   (MCP : Sprint 4)
-                      ├─ action_request ──► respond_action_refused ───► END   (HITL : Sprint 4)
+                      ├─ operational_data ► fetch_operational_data (MCP, lecture) ─► END
+                      ├─ action_request ──► plan_action ─┬─ ticket ──► draft_ticket → approve_ticket (interrupt)
+                      │                                  ├─ forbidden ─► respond_action_forbidden ─► END
+                      │                                  └─ autre ─────► respond_action_refused ───► END
                       └─ out_of_scope ────► respond_out_of_scope ─────► END
 
     validate ─┬─ citations valides ───────────────► finalize → END
               ├─ citations invalides (≤1 retry) ──► generate (avec le retour du validateur)
               ├─ citations invalides (épuisé) ────► reject → END
               └─ LLM demande une précision ───────► clarify
+
+    approve_ticket ─┬─ approuvé (approbateur nommé) ─► create_ticket (MCP, clé d'idempotence) → END
+                    └─ refusé ───────────────────────► ticket_rejected → END
+
+Human-in-the-loop : AUCUN chemin ne mène à create_ticket sans passer par approve_ticket, qui
+suspend le graphe (interrupt) jusqu'à la décision humaine ; le serveur MCP refuse en plus
+toute création sans approbateur. Sans client GMAO, les deux intentions retombent sur les
+réponses fixes du Sprint 3 (respond_tool_unavailable / respond_action_refused).
 
 Pourquoi un graphe explicite plutôt qu'un agent ReAct : chaque transition est du code
 testable, le nombre d'appels LLM est borné et prévisible, et un modèle local n'a pas à
@@ -22,7 +32,6 @@ fiabiliser des appels d'outils libres. Toutes les boucles ont un plafond (config
 from __future__ import annotations
 
 import logging
-import re
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
@@ -32,8 +41,11 @@ from typing import Any, Dict, List, Optional
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
+from maintidoc.agent import actions
+from maintidoc.agent.actions import MANUAL_CODE as _MANUAL_CODE
 from maintidoc.agent.llm import Generator, Router
 from maintidoc.agent.state import AgentState, RouteDecision, effective_question
+from maintidoc.gmao.client import GMAOClient, GMAOToolError
 from maintidoc.config import (
     AGENT_CHECKPOINT_DB,
     AGENT_MAX_CLARIFICATIONS,
@@ -66,23 +78,32 @@ CANNED_RESPONSES = {
         "MaintiDoc n'exécute aucune action technique (ticket, failover, zoning, suppression). "
         "Toute action engageante nécessitera une validation humaine explicite."
     ),
+    "action_forbidden": (
+        "Action hors périmètre de MaintiDoc : le manuel (section 5) interdit d'exécuter un failover, "
+        "une reconfiguration (zoning, LUN) ou une commande destructive depuis l'assistant. "
+        "Je peux en revanche préparer un ticket pour qu'un technicien habilité intervienne."
+    ),
+    "action_unsupported": (
+        "La seule action que MaintiDoc peut engager est la création d'un ticket d'intervention, "
+        "après votre approbation explicite. Reformulez votre demande en ce sens si besoin."
+    ),
 }
 
-
-# Un identifiant du manuel (AL-01, DIAG-FC-01, INC-104, FIG-02, DISC-02…) suffit à lancer une
-# recherche ciblée : un petit modèle peut encore juger la demande « vague », le code tranche.
-_MANUAL_CODE = re.compile(r"\b(?:AL|DIAG|INC|FIG|DISC|CAS)-[A-Z]*-?\d+\b", re.IGNORECASE)
+APPROVAL_QUESTION = "Approuvez-vous la création de ce ticket dans la GMAO ?"
+_EDITABLE_DRAFT_FIELDS = ("equipment_id", "title", "description", "priority")
 
 
 class MaintiDocGraph:
     """Construit les nœuds du graphe à partir de dépendances injectées."""
 
-    def __init__(self, retriever, reranker, packer, router: Router, generator: Generator):
+    def __init__(self, retriever, reranker, packer, router: Router, generator: Generator,
+                 gmao: Optional[GMAOClient] = None):
         self.retriever = retriever
         self.reranker = reranker
         self.packer = packer
         self.router = router
         self.generator = generator
+        self.gmao = gmao
 
     # ─────────────────────────────────────────────────────────────────────
     # Routage
@@ -111,13 +132,13 @@ class MaintiDocGraph:
             "trace": [f"classify:{intent}"],
         }
 
-    @staticmethod
-    def route_after_classify(state: AgentState) -> str:
+    def route_after_classify(self, state: AgentState) -> str:
+        connected = self.gmao is not None
         return {
             "documentation": "retrieve",
             "ambiguous": "clarify",
-            "operational_data": "respond_tool_unavailable",
-            "action_request": "respond_action_refused",
+            "operational_data": "fetch_operational_data" if connected else "respond_tool_unavailable",
+            "action_request": "plan_action" if connected else "respond_action_refused",
             "out_of_scope": "respond_out_of_scope",
         }[state["intent"]]
 
@@ -285,10 +306,142 @@ class MaintiDocGraph:
             "trace": ["insufficient_evidence"],
         }
 
-    def _canned(self, status: str):
+    def _canned(self, status: str, text_key: Optional[str] = None):
         def node(state: AgentState) -> Dict[str, Any]:
-            return {"response": _response(state, status=status, answer=CANNED_RESPONSES[status]), "trace": [status]}
+            answer = CANNED_RESPONSES[text_key or status]
+            return {"response": _response(state, status=status, answer=answer), "trace": [text_key or status]}
         return node
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Données opérationnelles : outil MCP en LECTURE (aucune validation requise)
+    # ─────────────────────────────────────────────────────────────────────
+
+    def fetch_operational_data(self, state: AgentState) -> Dict[str, Any]:
+        question = effective_question(state)
+        equipment_id = actions.extract_equipment(question)
+        thread_id = state.get("thread_id")
+        try:
+            if equipment_id and actions.wants_history(question):
+                tool = "get_equipment_history"
+                data = self.gmao.get_equipment_history(equipment_id, thread_id=thread_id)
+                eq = data["equipment"]
+                tickets = data["tickets"]
+                header = f"Historique GMAO de {eq['label']} ({eq['id']}) : {len(tickets)} intervention(s)."
+            else:
+                tool = "get_open_tickets"
+                tickets = self.gmao.get_open_tickets(equipment_id, thread_id=thread_id)["tickets"]
+                scope = equipment_id or "toute la baie"
+                header = f"Tickets ouverts dans la GMAO ({scope}) : {len(tickets)}."
+        except GMAOToolError as exc:
+            return {"response": _response(state, status="tool_error", answer=f"Consultation de la GMAO impossible : {exc}"),
+                    "trace": ["tool:error"]}
+
+        lines = [header] + [
+            f"- {t['id']} · {t['equipment_id']} · {t['status']} · {t['created_at'][:10]} : {t['title']}" for t in tickets
+        ]
+        return {
+            "response": _response(
+                state, status="answered", answer="\n".join(lines),
+                # Citations au même titre que le manuel : chaque affirmation renvoie à un enregistrement
+                citations=[f"GMAO:{t['id']}" for t in tickets],
+                sources=[{"source": "GMAO", "ticket_id": t["id"], "equipment_id": t["equipment_id"]} for t in tickets],
+            ),
+            "trace": [f"tool:{tool}"],
+        }
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Action engageante : brouillon → validation humaine → création idempotente
+    # ─────────────────────────────────────────────────────────────────────
+
+    def plan_action(self, state: AgentState) -> Dict[str, Any]:
+        kind = actions.classify_action(effective_question(state))
+        return {"action_kind": kind, "trace": [f"plan_action:{kind}"]}
+
+    @staticmethod
+    def route_after_plan(state: AgentState) -> str:
+        return {"ticket": "draft_ticket", "forbidden": "respond_action_forbidden"}.get(
+            state["action_kind"], "respond_action_unsupported"
+        )
+
+    def draft_ticket(self, state: AgentState) -> Dict[str, Any]:
+        """Prépare le brouillon (manuel PROC-SAN-01, étapes 4 à 6) : rien n'est encore écrit."""
+        question = effective_question(state)
+        equipment_id = actions.extract_equipment(question) or actions.DEFAULT_EQUIPMENT
+        codes = actions.extract_codes(question)
+        warnings: List[str] = []
+        try:  # Étape 4 : consulter les interventions antérieures (lecture, sans effet)
+            history = self.gmao.get_equipment_history(equipment_id, thread_id=state.get("thread_id"))
+        except GMAOToolError as exc:
+            return {"response": _response(state, status="tool_error", answer=f"Préparation du ticket impossible : {exc}"),
+                    "trace": ["draft_ticket:error"]}
+
+        open_related = [t for t in history["tickets"] if t["status"] in ("open", "monitoring")]
+        if open_related:
+            ids = ", ".join(t["id"] for t in open_related)
+            warnings.append(f"Ticket(s) déjà ouvert(s) sur {equipment_id} : {ids}. Vérifier qu'il ne s'agit pas d'un doublon.")
+        draft = {
+            "equipment_id": equipment_id,
+            "equipment_label": history["equipment"]["label"],
+            "title": actions.draft_title(history["equipment"]["label"], codes),
+            "description": question,
+            "priority": actions.DEFAULT_PRIORITY,
+            "evidence": codes + [t["id"] for t in open_related if t["id"] not in codes],
+            "warnings": warnings,
+        }
+        return {"ticket_draft": draft, "trace": ["draft_ticket"]}
+
+    def approve_ticket(self, state: AgentState) -> Dict[str, Any]:
+        # Comme clarify : ce nœud est ré-exécuté à la reprise, rien avant interrupt() n'a d'effet.
+        decision = interrupt({"type": "ticket_approval", "question": APPROVAL_QUESTION, "draft": state["ticket_draft"]})
+        decision = decision if isinstance(decision, dict) else {}
+        approver = str(decision.get("approver") or "").strip()
+        approved = bool(decision.get("approved")) and bool(approver)  # pas d'approbation anonyme
+        draft = dict(state["ticket_draft"])
+        if approved:
+            edits = decision.get("edits") or {}
+            draft.update({k: v for k, v in edits.items() if k in _EDITABLE_DRAFT_FIELDS and v})
+        return {
+            "ticket_draft": draft,
+            "approval": {"approved": approved, "approver": approver, "reason": str(decision.get("reason") or "")},
+            "trace": [f"approval:{'approved' if approved else 'rejected'}"],
+        }
+
+    @staticmethod
+    def route_after_approval(state: AgentState) -> str:
+        return "create_ticket" if state["approval"]["approved"] else "ticket_rejected"
+
+    def create_ticket(self, state: AgentState) -> Dict[str, Any]:
+        draft, approval, thread_id = state["ticket_draft"], state["approval"], state.get("thread_id") or ""
+        key = actions.idempotency_key(thread_id, draft)
+        try:
+            result = self.gmao.create_ticket(
+                equipment_id=draft["equipment_id"], title=draft["title"], description=draft["description"],
+                priority=draft["priority"], evidence=draft["evidence"], approved_by=approval["approver"],
+                idempotency_key=key, thread_id=thread_id,
+            )
+        except GMAOToolError as exc:
+            return {"response": _response(state, status="tool_error", answer=f"Création du ticket refusée par la GMAO : {exc}"),
+                    "trace": ["create_ticket:error"]}
+
+        ticket = result["ticket"]
+        replay = "" if result.get("created", True) else " (déjà créé : rejeu sans doublon)"
+        answer = f"Ticket {ticket['id']} créé sur {ticket['equipment_id']}, approuvé par {ticket['approved_by']}{replay}."
+        return {
+            "response": _response(state, status="ticket_created", answer=answer, citations=[f"GMAO:{ticket['id']}"],
+                                  sources=[{"source": "GMAO", "ticket_id": ticket["id"], "equipment_id": ticket["equipment_id"]}],
+                                  ticket=ticket),
+            "trace": [f"create_ticket:{ticket['id']}"],
+        }
+
+    def ticket_rejected(self, state: AgentState) -> Dict[str, Any]:
+        approval = state["approval"]
+        who = approval["approver"] or "l'utilisateur (approbateur non identifié)"
+        reason = f" Motif : {approval['reason']}" if approval["reason"] else ""
+        return {
+            "response": _response(state, status="ticket_rejected",
+                                  answer=f"Création annulée par {who}. Aucun ticket n'a été créé.{reason}"),
+            "trace": ["ticket_rejected"],
+        }
 
     # ─────────────────────────────────────────────────────────────────────
     # Assemblage
@@ -299,16 +452,29 @@ class MaintiDocGraph:
         for name in ("classify", "clarify", "retrieve", "rerank", "rewrite_query", "pack",
                      "generate", "validate", "finalize", "reject", "insufficient_evidence"):
             g.add_node(name, getattr(self, name))
+        for name in ("fetch_operational_data", "plan_action", "draft_ticket", "approve_ticket",
+                     "create_ticket", "ticket_rejected"):
+            g.add_node(name, getattr(self, name))
         g.add_node("respond_out_of_scope", self._canned("out_of_scope"))
         g.add_node("respond_tool_unavailable", self._canned("tool_unavailable"))
         g.add_node("respond_action_refused", self._canned("action_refused"))
+        g.add_node("respond_action_forbidden", self._canned("action_refused", "action_forbidden"))
+        g.add_node("respond_action_unsupported", self._canned("action_refused", "action_unsupported"))
 
         # Les destinations possibles sont déclarées (path_map) : LangGraph ne peut pas les
         # déduire d'une fonction Python, et sans elles le diagramme exporté est incomplet.
         g.add_edge(START, "classify")
         g.add_conditional_edges("classify", self.route_after_classify, [
-            "retrieve", "clarify", "respond_tool_unavailable", "respond_action_refused", "respond_out_of_scope",
+            "retrieve", "clarify", "fetch_operational_data", "plan_action",
+            "respond_tool_unavailable", "respond_action_refused", "respond_out_of_scope",
         ])
+        g.add_conditional_edges("plan_action", self.route_after_plan, [
+            "draft_ticket", "respond_action_forbidden", "respond_action_unsupported",
+        ])
+        # Un brouillon en échec (GMAO injoignable) porte déjà sa réponse : on s'arrête là
+        g.add_conditional_edges("draft_ticket", lambda s: END if s.get("response") else "approve_ticket",
+                                ["approve_ticket", END])
+        g.add_conditional_edges("approve_ticket", self.route_after_approval, ["create_ticket", "ticket_rejected"])
         g.add_edge("clarify", "classify")
         g.add_edge("retrieve", "rerank")
         g.add_conditional_edges("rerank", self.route_after_rerank, ["pack", "rewrite_query", "insufficient_evidence"])
@@ -316,13 +482,15 @@ class MaintiDocGraph:
         g.add_edge("pack", "generate")
         g.add_edge("generate", "validate")
         g.add_conditional_edges("validate", self.route_after_validate, ["generate", "reject", "clarify", "finalize"])
-        for terminal in ("finalize", "reject", "insufficient_evidence",
-                         "respond_out_of_scope", "respond_tool_unavailable", "respond_action_refused"):
+        for terminal in ("finalize", "reject", "insufficient_evidence", "respond_out_of_scope",
+                         "respond_tool_unavailable", "respond_action_refused", "respond_action_forbidden",
+                         "respond_action_unsupported", "fetch_operational_data", "create_ticket", "ticket_rejected"):
             g.add_edge(terminal, END)
         return g
 
 
-def _response(state: AgentState, *, status: str, answer: str, citations=None, sources=None, uncertainties=None) -> Dict[str, Any]:
+def _response(state: AgentState, *, status: str, answer: str, citations=None, sources=None, uncertainties=None,
+              ticket=None) -> Dict[str, Any]:
     return {
         "status": status,
         "answer": answer,
@@ -330,6 +498,7 @@ def _response(state: AgentState, *, status: str, answer: str, citations=None, so
         "sources": sources or [],
         "uncertainties": uncertainties or [],
         "intent": state.get("intent"),
+        "ticket": ticket,
     }
 
 
@@ -341,7 +510,9 @@ def _response(state: AgentState, *, status: str, answer: str, citations=None, so
 class AgentTurn:
     """Résultat d'un tour : réponse finale, ou question de clarification en attente."""
     thread_id: str
-    status: str  # answered | insufficient_evidence | needs_clarification | out_of_scope | tool_unavailable | action_refused
+    # answered | insufficient_evidence | needs_clarification | needs_approval | ticket_created |
+    # ticket_rejected | out_of_scope | tool_unavailable | tool_error | action_refused
+    status: str
     answer: str = ""
     clarification_question: Optional[str] = None
     citations: List[str] = field(default_factory=list)
@@ -349,6 +520,8 @@ class AgentTurn:
     uncertainties: List[str] = field(default_factory=list)
     intent: Optional[str] = None
     trace: List[str] = field(default_factory=list)
+    pending_ticket: Optional[Dict[str, Any]] = None  # brouillon à approuver (status needs_approval)
+    ticket: Optional[Dict[str, Any]] = None          # ticket créé (status ticket_created)
 
 
 def sqlite_checkpointer(path: Path = AGENT_CHECKPOINT_DB):
@@ -370,9 +543,10 @@ class MaintiDocAgent:
             turn = agent.reply(turn.thread_id, "Voyant orange, alarme AL-01")
     """
 
-    def __init__(self, retriever, reranker, packer, router: Router, generator: Generator, checkpointer=None):
+    def __init__(self, retriever, reranker, packer, router: Router, generator: Generator, checkpointer=None,
+                 gmao: Optional[GMAOClient] = None):
         self.checkpointer = checkpointer if checkpointer is not None else sqlite_checkpointer()
-        self.graph = MaintiDocGraph(retriever, reranker, packer, router, generator).build().compile(
+        self.graph = MaintiDocGraph(retriever, reranker, packer, router, generator, gmao=gmao).build().compile(
             checkpointer=self.checkpointer
         )
 
@@ -381,6 +555,7 @@ class MaintiDocAgent:
             raise ValueError("La question est vide.")
         thread_id = thread_id or str(uuid.uuid4())
         initial: AgentState = {
+            "thread_id": thread_id,
             "question": question.strip(),
             "clarifications": [],
             "retrieval_attempt": 0,
@@ -392,15 +567,39 @@ class MaintiDocAgent:
 
     def reply(self, thread_id: str, answer: str) -> AgentTurn:
         """Répond à la question de clarification en attente et reprend le graphe."""
-        snapshot = self.graph.get_state(self._config(thread_id))
-        if not snapshot.interrupts:
-            raise ValueError(f"Aucune clarification en attente pour la conversation {thread_id}.")
+        self._require_pending(thread_id, "clarification")
         return self._run(Command(resume=answer), thread_id)
 
+    def approve(self, thread_id: str, approver: str, edits: Optional[Dict[str, Any]] = None) -> AgentTurn:
+        """Décision humaine : approuve le brouillon en attente (éventuellement corrigé) → création du ticket.
+
+        ``edits`` : corrections de l'humain parmi equipment_id, title, description, priority.
+        """
+        if not (approver or "").strip():
+            raise ValueError("Une approbation doit être nominative (approver obligatoire).")
+        self._require_pending(thread_id, "ticket_approval")
+        return self._run(Command(resume={"approved": True, "approver": approver, "edits": edits or {}}), thread_id)
+
+    def reject(self, thread_id: str, approver: str, reason: str = "") -> AgentTurn:
+        """Décision humaine : refuse le brouillon en attente. Aucun ticket n'est créé."""
+        self._require_pending(thread_id, "ticket_approval")
+        return self._run(Command(resume={"approved": False, "approver": approver, "reason": reason}), thread_id)
+
+    def _require_pending(self, thread_id: str, kind: str) -> None:
+        interrupts = self.graph.get_state(self._config(thread_id)).interrupts
+        if not interrupts or interrupts[0].value.get("type") != kind:
+            label = "clarification" if kind == "clarification" else "validation de ticket"
+            raise ValueError(f"Aucune {label} en attente pour la conversation {thread_id}.")
+
     @classmethod
-    def from_indexes(cls, qdrant_store, embeddings_mgr, bm25_index, checkpointer=None) -> "MaintiDocAgent":
-        """Assemble l'agent de production à partir des index déjà construits (notebook, app)."""
+    def from_indexes(cls, qdrant_store, embeddings_mgr, bm25_index, checkpointer=None,
+                     gmao: Optional[GMAOClient] = None) -> "MaintiDocAgent":
+        """Assemble l'agent de production à partir des index déjà construits (notebook, app).
+
+        ``gmao`` : client MCP de la GMAO ; par défaut, serveur MCP local lancé en stdio.
+        """
         from maintidoc.agent.llm import OllamaGenerator, OllamaRouter
+        from maintidoc.gmao.client import MCPGMAOClient
         from maintidoc.retrieval import CrossEncoderReranker, EvidencePacker, HybridRetriever
 
         return cls(
@@ -410,6 +609,7 @@ class MaintiDocAgent:
             OllamaRouter(),
             OllamaGenerator(),
             checkpointer=checkpointer,
+            gmao=gmao if gmao is not None else MCPGMAOClient.stdio(),
         )
 
     @staticmethod
@@ -421,10 +621,12 @@ class MaintiDocAgent:
         trace = result.get("trace", [])
         if result.get("__interrupt__"):
             value = result["__interrupt__"][0].value
+            approval = value.get("type") == "ticket_approval"
             return AgentTurn(
                 thread_id=thread_id,
-                status="needs_clarification",
+                status="needs_approval" if approval else "needs_clarification",
                 clarification_question=value.get("question"),
+                pending_ticket=value.get("draft") if approval else None,
                 intent=result.get("intent"),
                 trace=trace,
             )
@@ -438,4 +640,5 @@ class MaintiDocAgent:
             uncertainties=r["uncertainties"],
             intent=r["intent"],
             trace=trace,
+            ticket=r.get("ticket"),
         )

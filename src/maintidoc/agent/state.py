@@ -19,8 +19,8 @@ from pydantic import BaseModel, Field
 Intent = Literal[
     "documentation",     # réponse attendue dans le manuel SAN → chaîne RAG
     "ambiguous",         # équipement / symptôme non précisé → question de clarification
-    "operational_data",  # données vivantes (tickets ouverts, historique réel) → MCP (Sprint 4)
-    "action_request",    # demande d'agir (créer un ticket, failover…) → validation humaine (Sprint 4)
+    "operational_data",  # données vivantes (tickets ouverts, historique) → outil MCP en lecture
+    "action_request",    # demande d'agir → brouillon de ticket + validation humaine, ou refus
     "out_of_scope",      # hors maintenance SAN
 ]
 
@@ -71,6 +71,12 @@ class AgentState(TypedDict, total=False):
     generation_attempt: int
     llm_output: Dict[str, Any]
     citation_issues: List[str]
+
+    # Outils MCP / validation humaine (Sprint 4)
+    thread_id: str
+    action_kind: str                      # ticket | forbidden | unsupported
+    ticket_draft: Dict[str, Any]          # brouillon soumis à l'humain
+    approval: Dict[str, Any]              # {approved, approver, reason}
 
     # Sortie
     response: Dict[str, Any]

@@ -59,6 +59,10 @@ AGENT_RERANK_TOP_K = 4
 # d'approbation humaine) survit au redémarrage du notebook ou du serveur.
 AGENT_CHECKPOINT_DB = PROCESSED_DATA_DIR / "checkpoints.sqlite"
 
+# GMAO simulée (Sprint 4), exposée à l'agent par un serveur MCP. Base SQLite séparée des
+# checkpoints : c'est le « système d'information », pas la mémoire de l'agent.
+GMAO_DB = Path(os.getenv("MAINTIDOC_GMAO_DB", str(PROCESSED_DATA_DIR / "gmao.sqlite")))
+
 # Métadonnées SAN
 DOC_ID = "SAN-MAN-001"
 TOTAL_EXPECTED_PAGES = 9
