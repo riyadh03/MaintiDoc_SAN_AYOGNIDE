@@ -9,14 +9,26 @@ from __future__ import annotations
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
 
 import anyio
 from mcp import Client, StdioServerParameters
+from mcp.client.stdio import stdio_client
 from mcp.types import TextContent
 
 from maintidoc.config import GMAO_DB
+
+
+@asynccontextmanager
+async def _stdio_with_log(params: StdioServerParameters, log: Path):
+    """Transport stdio dont le stderr du serveur va dans ``log`` (fermé à la fin de l'appel)."""
+    if str(log) != os.devnull:
+        log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "a", encoding="utf-8") as errlog:
+        async with stdio_client(params, errlog=errlog) as streams:
+            yield streams
 
 
 class GMAOToolError(RuntimeError):
@@ -38,9 +50,10 @@ class MCPGMAOClient:
     lui-même (tests : transport en mémoire).
     """
 
-    def __init__(self, target: Any, timeout_s: float = 60.0):
+    def __init__(self, target: Any, timeout_s: float = 60.0, server_log: Optional[Path] = None):
         self.target = target
         self.timeout_s = timeout_s
+        self.server_log = Path(server_log) if server_log else None
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mcp-gmao")
 
     @classmethod
@@ -50,13 +63,24 @@ class MCPGMAOClient:
             args=["-m", "maintidoc.gmao.server"],
             env={**os.environ, "MAINTIDOC_GMAO_DB": str(db_path), "PYTHONIOENCODING": "utf-8"},
         )
+        kw.setdefault("server_log", Path(db_path).with_name("gmao_mcp_server.log"))
         return cls(params, **kw)
+
+    def _transport(self):
+        """Cible passée à ``Client``.
+
+        En stdio, le stderr du serveur est redirigé vers un VRAI fichier : par défaut le SDK
+        utilise ``sys.stderr``, qui dans Jupyter n'a pas de ``fileno()`` (échec « fileno »).
+        """
+        if not isinstance(self.target, StdioServerParameters):
+            return self.target
+        return _stdio_with_log(self.target, self.server_log or Path(os.devnull))
 
     # ── Outils ──────────────────────────────────────────────────────────────
 
     def list_tools(self) -> List[str]:
         async def go():
-            async with Client(self.target) as client:
+            async with Client(self._transport()) as client:
                 return [t.name for t in (await client.list_tools()).tools]
         return self._run(go)
 
@@ -75,7 +99,7 @@ class MCPGMAOClient:
         arguments = {k: v for k, v in arguments.items() if v is not None}
 
         async def go():
-            async with Client(self.target, read_timeout_seconds=self.timeout_s) as client:
+            async with Client(self._transport(), read_timeout_seconds=self.timeout_s) as client:
                 return await client.call_tool(tool, arguments)
 
         result = self._run(go)
