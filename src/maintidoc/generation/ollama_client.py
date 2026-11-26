@@ -47,7 +47,7 @@ def format_evidence(texts: List[Dict[str, Any]], images: List[Dict[str, Any]]) -
     """
     chunks = []
     for h in texts:
-        label = _MODALITY_LABELS.get(h["modality"], "texte")
+        label = _MODALITY_LABELS.get(h.get("modality"), "texte")
         chunks.append(f"[SOURCE {h['citation_id']} | {label} | page {h['page']}]\n{h['content']}")
     for h in images:
         fig = h.get("figure_id") or "FIG"

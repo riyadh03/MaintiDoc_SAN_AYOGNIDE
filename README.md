@@ -45,7 +45,7 @@ flowchart TD
 
     subgraph Agent ["4. Orchestration Agentique & HITL"]
         Reranker --> LangGraph["Agent LangGraph"]
-        LangGraph --> LLM["Qwen3.8:27B / VLM (Ollama)"]
+        LangGraph --> LLM["Qwen2.5-VL / VLM (Ollama)"]
         LangGraph --> MCP["Serveur MCP (Historique, Tickets)"]
         MCP --> HITL{"Validation Humaine ?"}
         HITL -->|Oui| TicketSystem[("Création de Ticket")]
@@ -84,7 +84,7 @@ docker compose up -d
 
 ### 2. Télécharger le modèle dans le conteneur Ollama
 ```bash
-docker exec -it maintidoc-ollama ollama pull qwen3.8:27b
+docker exec -it maintidoc-ollama ollama pull qwen2.5vl:3b
 ```
 
 ### 3. Accéder aux interfaces

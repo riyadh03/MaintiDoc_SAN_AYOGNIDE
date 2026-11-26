@@ -43,11 +43,16 @@ intent :
   état temps réel, historique d'un équipement dans la GMAO).
 - "action_request" : demande d'AGIR (créer/modifier un ticket, failover, modifier le zoning,
   supprimer un volume…).
-- "out_of_scope" : sans rapport avec la maintenance SAN.
+- "out_of_scope" : sans rapport avec la maintenance SAN (culture générale, géographie, cuisine,
+  code informatique…), même si la question est courte. Ex. « Quelle est la capitale de l'Australie ? ».
+  "ambiguous" est réservé aux questions de MAINTENANCE imprécises.
 
 search_query : la question reformulée pour un moteur de recherche, en conservant
 exactement les codes (AL-01, FIG-02, INC-104, DIAG-FC-01…).
 visual_query_en : si un schéma peut aider, sa description courte EN ANGLAIS, sinon null.
+Si des « Précisions de l'utilisateur » suivent la question, classe la demande COMPLÈTE :
+une précision qui nomme un équipement, un voyant, un code ou un symptôme la rend exploitable
+→ "documentation", et search_query doit intégrer ces précisions.
 En cas de doute entre "documentation" et "ambiguous", choisis "documentation"."""
 
 

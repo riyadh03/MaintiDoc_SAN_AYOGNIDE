@@ -197,7 +197,7 @@ def validate_citations(response, evidence):
 with st.sidebar:
     st.header('Configuration')
     st.write('**Mac M3 · 36 Go** — traitement séquentiel recommandé')
-    model_name = st.text_input('Modèle Ollama', 'qwen3.8:27b')
+    model_name = st.text_input('Modèle Ollama', 'qwen2.5vl:3b')
     ctx = st.select_slider('Contexte (tokens)', options=[2048, 4096, 8192], value=4096)
     max_images = st.slider('Images transmises au VLM', 0, 2, 1)
     top_pages = st.slider('Pages retenues après fusion', 1, 5, 3)
@@ -272,7 +272,7 @@ if state and state['hash'] == pdf_hash:
                 st.code(e['content'][:1100], language=None)
         for item in state['images']:
             st.image(item['bytes'], caption=f"{item['id']} · page {item['page']}", width=620)
-    if st.button('Générer la réponse avec Qwen3.8:27B'):
+    if st.button('Générer la réponse avec Qwen (Ollama)'):
         try:
             with st.spinner('Inférence locale Ollama…'):
                 raw = call_vlm(state['question'], state['evidence'], state['images'], model_name, ctx, 700)

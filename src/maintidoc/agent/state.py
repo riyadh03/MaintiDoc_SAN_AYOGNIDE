@@ -81,7 +81,9 @@ class AgentState(TypedDict, total=False):
 
 def effective_question(state: AgentState) -> str:
     """Question enrichie des précisions apportées par l'utilisateur."""
-    parts = [state["question"]]
-    for c in state.get("clarifications") or []:
-        parts.append(f"(Précision demandée : {c['question']} → Réponse : {c['answer']})")
-    return "\n".join(parts)
+    # Format plat : un petit modèle relisant la question de clarification générique
+    # (« précisez l'équipement, le voyant… ») la jugeait encore vague et bouclait.
+    answers = [c["answer"] for c in state.get("clarifications") or [] if c.get("answer")]
+    if not answers:
+        return state["question"]
+    return state["question"] + "\nPrécisions de l'utilisateur : " + " ; ".join(answers)

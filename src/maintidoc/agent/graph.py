@@ -22,6 +22,7 @@ fiabiliser des appels d'outils libres. Toutes les boucles ont un plafond (config
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
@@ -68,6 +69,11 @@ CANNED_RESPONSES = {
 }
 
 
+# Un identifiant du manuel (AL-01, DIAG-FC-01, INC-104, FIG-02, DISC-02…) suffit à lancer une
+# recherche ciblée : un petit modèle peut encore juger la demande « vague », le code tranche.
+_MANUAL_CODE = re.compile(r"\b(?:AL|DIAG|INC|FIG|DISC|CAS)-[A-Z]*-?\d+\b", re.IGNORECASE)
+
+
 class MaintiDocGraph:
     """Construit les nœuds du graphe à partir de dépendances injectées."""
 
@@ -93,8 +99,8 @@ class MaintiDocGraph:
 
         intent = route.intent
         n_clar = len(state.get("clarifications") or [])
-        if intent == "ambiguous" and n_clar >= AGENT_MAX_CLARIFICATIONS:
-            intent = "documentation"  # plafond atteint : on cherche avec ce qu'on a
+        if intent == "ambiguous" and (n_clar >= AGENT_MAX_CLARIFICATIONS or _MANUAL_CODE.search(question)):
+            intent = "documentation"  # plafond atteint ou code du manuel cité : on cherche
 
         return {
             "intent": intent,
@@ -240,6 +246,11 @@ class MaintiDocGraph:
             uncertainties.append("Nombre maximal de clarifications atteint.")
         allowed = state.get("allowed_citations") or {}
         citations = [str(c).strip().strip("[]").removeprefix("SOURCE").strip() for c in out.get("citations") or []]
+        # Un petit modèle peut répondre ET citer des sources validées tout en se déclarant
+        # « insufficient_evidence » : le statut suit les preuves, la prudence devient une incertitude.
+        if out.get("status") == "insufficient_evidence" and citations and (out.get("answer") or "").strip():
+            out["status"] = "answered"
+            uncertainties.append("Preuves jugées partielles par le modèle : réponse limitée aux passages cités.")
         return {
             "response": _response(
                 state,

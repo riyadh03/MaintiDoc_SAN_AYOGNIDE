@@ -31,8 +31,9 @@ RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
 # Valeur prudente provisoire : à calibrer sur le jeu d'évaluation au Sprint 6.
 RERANKER_MIN_SCORE = 0.05
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = "qwen3.8:27b"
-OLLAMA_FALLBACK_MODEL = "qwen2.5:14b"
+# Modèle vision-langage (VLM) : il doit lire les schémas joints, donc pas de modèle texte seul.
+# qwen2.5vl:3b (~3 Go) tient sur un PC 16 Go sans GPU dédié ; qwen2.5vl:7b pour la démo si la RAM le permet.
+OLLAMA_MODEL = os.getenv("MAINTIDOC_OLLAMA_MODEL", "qwen2.5vl:3b")
 
 # OCR (schémas techniques et pages scannées) — moteur RapidOCR/ONNX
 OCR_ENABLED = os.getenv("MAINTIDOC_OCR", "1") != "0"

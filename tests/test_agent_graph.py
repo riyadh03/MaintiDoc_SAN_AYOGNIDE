@@ -204,6 +204,26 @@ def test_empty_question_rejected():
         make_agent(FakeRouter(route()), FakeGenerator(answer())).ask("   ")
 
 
+def test_clarification_citing_manual_code_stops_the_loop():
+    """Bug vu en live (Qwen 3B) : le routeur jugeait encore « ambigu » une précision citant AL-01."""
+    router = FakeRouter(route("ambiguous", clarification_question="Quel voyant ?"))  # toujours « ambigu »
+    agent = make_agent(router, FakeGenerator(answer()))
+    first = agent.ask("Ça clignote en orange, que faire ?")
+    final = agent.reply(first.thread_id, "Voyant orange, alarme AL-01 sur le fabric A")
+
+    assert final.status == "answered"
+    assert router.questions[1].endswith("Précisions de l'utilisateur : Voyant orange, alarme AL-01 sur le fabric A")
+
+
+def test_cited_answer_flagged_insufficient_is_answered_with_uncertainty():
+    """Bug vu en live : réponse + citations valides mais statut 'insufficient_evidence'."""
+    gen = FakeGenerator(answer(status="insufficient_evidence"))
+    turn = make_agent(FakeRouter(route()), gen).ask("Que signifie AL-01 ?")
+    assert turn.status == "answered"
+    assert turn.citations == [CITATION]
+    assert any("partielles" in u for u in turn.uncertainties)
+
+
 def test_pending_clarification_survives_restart(tmp_path):
     """Checkpoint SQLite : un nouveau processus reprend la conversation en attente."""
     db = tmp_path / "checkpoints.sqlite"
